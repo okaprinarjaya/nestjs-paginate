@@ -1,5 +1,6 @@
 import { FindOperator, Repository, SelectQueryBuilder } from 'typeorm'
 import { ColumnMetadata } from 'typeorm/metadata/ColumnMetadata'
+import { PaginateConfig } from './paginate'
 
 /**
  * Joins 2 keys as `K`, `K.P`, `K.(P` or `K.P)`
@@ -170,7 +171,8 @@ export function checkIsArray(qb: SelectQueryBuilder<unknown>, propertyName: stri
 }
 
 // This function is used to fix the column alias when using relation, embedded or virtual properties
-export function fixColumnAlias(
+export function fixColumnAlias<T>(
+    config: PaginateConfig<T>,
     properties: ColumnProperties,
     alias: string,
     isRelation = false,
@@ -178,6 +180,10 @@ export function fixColumnAlias(
     isEmbedded = false,
     query?: ColumnMetadata['query']
 ): string {
+    if (config.useOnlyQueryBuilderJoinForDefiningRelation) {
+        return properties.column
+    }
+
     if (isRelation) {
         if (isVirtualProperty && query) {
             return `(${query(`${alias}_${properties.propertyPath}_rel`)})` // () is needed to avoid parameter conflict

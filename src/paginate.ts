@@ -92,6 +92,7 @@ export interface PaginateConfig<T> {
     ignoreSelectInQueryParam?: boolean
     getDataAsRaw?: boolean
     rowCountAsItIs?: boolean
+    useOnlyQueryBuilderJoinForDefiningRelation?: boolean
 }
 
 export enum PaginationLimit {
@@ -101,15 +102,14 @@ export enum PaginationLimit {
     DEFAULT_MAX_LIMIT = 100,
 }
 
-function generateWhereStatement<T>(
-    queryBuilder: SelectQueryBuilder<T>,
-    obj: FindOptionsWhere<T> | FindOptionsWhere<T>[]
-) {
+function generateWhereStatement<T>(queryBuilder: SelectQueryBuilder<T>, config: PaginateConfig<T>) {
+    const obj: FindOptionsWhere<T> | FindOptionsWhere<T>[] = config.where
     const toTransform = Array.isArray(obj) ? obj : [obj]
-    return toTransform.map((item) => flattenWhereAndTransform(queryBuilder, item).join(' AND ')).join(' OR ')
+    return toTransform.map((item) => flattenWhereAndTransform(config, queryBuilder, item).join(' AND ')).join(' OR ')
 }
 
 function flattenWhereAndTransform<T>(
+    config: PaginateConfig<T>,
     queryBuilder: SelectQueryBuilder<T>,
     obj: FindOptionsWhere<T>,
     separator = '.',
@@ -120,13 +120,20 @@ function flattenWhereAndTransform<T>(
             const joinedKey = parentKey ? `${parentKey}${separator}${key}` : key
 
             if (typeof value === 'object' && value !== null && !isFindOperator(value)) {
-                return flattenWhereAndTransform(queryBuilder, value as FindOptionsWhere<T>, separator, joinedKey)
+                return flattenWhereAndTransform(
+                    config,
+                    queryBuilder,
+                    value as FindOptionsWhere<T>,
+                    separator,
+                    joinedKey
+                )
             } else {
                 const property = getPropertiesByColumnName(joinedKey)
                 const { isVirtualProperty, query: virtualQuery } = extractVirtualProperty(queryBuilder, property)
                 const isRelation = checkIsRelation(queryBuilder, property.propertyPath)
                 const isEmbedded = checkIsEmbedded(queryBuilder, property.propertyPath)
                 const alias = fixColumnAlias(
+                    config,
                     property,
                     queryBuilder.alias,
                     isRelation,
@@ -292,7 +299,14 @@ export async function paginate<T extends ObjectLiteral>(
         const { isVirtualProperty } = extractVirtualProperty(queryBuilder, columnProperties)
         const isRelation = checkIsRelation(queryBuilder, columnProperties.propertyPath)
         const isEmbeded = checkIsEmbedded(queryBuilder, columnProperties.propertyPath)
-        let alias = fixColumnAlias(columnProperties, queryBuilder.alias, isRelation, isVirtualProperty, isEmbeded)
+        let alias = fixColumnAlias(
+            config,
+            columnProperties,
+            queryBuilder.alias,
+            isRelation,
+            isVirtualProperty,
+            isEmbeded
+        )
 
         if (isMMDb) {
             if (isVirtualProperty) {
@@ -323,14 +337,14 @@ export async function paginate<T extends ObjectLiteral>(
         const cols: string[] = selectParams.reduce((cols, currentCol) => {
             const columnProperties = getPropertiesByColumnName(currentCol)
             const isRelation = checkIsRelation(queryBuilder, columnProperties.propertyPath)
-            cols.push(fixColumnAlias(columnProperties, queryBuilder.alias, isRelation))
+            cols.push(fixColumnAlias(config, columnProperties, queryBuilder.alias, isRelation))
             return cols
         }, [])
         queryBuilder.select(cols)
     }
 
     if (config.where && isRepository(repo)) {
-        const baseWhereStr = generateWhereStatement(queryBuilder, config.where)
+        const baseWhereStr = generateWhereStatement(queryBuilder, config)
         queryBuilder.andWhere(`(${baseWhereStr})`)
     }
 
@@ -359,6 +373,7 @@ export async function paginate<T extends ObjectLiteral>(
                     const isRelation = checkIsRelation(qb, property.propertyPath)
                     const isEmbeded = checkIsEmbedded(qb, property.propertyPath)
                     const alias = fixColumnAlias(
+                        config,
                         property,
                         qb.alias,
                         isRelation,
@@ -385,7 +400,7 @@ export async function paginate<T extends ObjectLiteral>(
     }
 
     if (query.filter) {
-        addFilter(queryBuilder, query, config.filterableColumns)
+        addFilter(config, queryBuilder, query, config.filterableColumns)
     }
 
     if (query.limit === PaginationLimit.COUNTER_ONLY) {

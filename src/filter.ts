@@ -26,6 +26,7 @@ import {
     getPropertiesByColumnName,
     isISODate,
 } from './helper'
+import { PaginateConfig } from './paginate'
 
 export enum FilterOperator {
     EQ = '$eq',
@@ -158,14 +159,27 @@ export function generatePredicateCondition(
     ) as WherePredicateOperator
 }
 
-export function addWhereCondition<T>(qb: SelectQueryBuilder<T>, column: string, filter: ColumnsFilters) {
+export function addWhereCondition<T>(
+    config: PaginateConfig<T>,
+    qb: SelectQueryBuilder<T>,
+    column: string,
+    filter: ColumnsFilters
+) {
     const columnProperties = getPropertiesByColumnName(column)
     const { isVirtualProperty, query: virtualQuery } = extractVirtualProperty(qb, columnProperties)
     const isRelation = checkIsRelation(qb, columnProperties.propertyPath)
     const isEmbedded = checkIsEmbedded(qb, columnProperties.propertyPath)
     const isArray = checkIsArray(qb, columnProperties.propertyName)
 
-    const alias = fixColumnAlias(columnProperties, qb.alias, isRelation, isVirtualProperty, isEmbedded, virtualQuery)
+    const alias = fixColumnAlias(
+        config,
+        columnProperties,
+        qb.alias,
+        isRelation,
+        isVirtualProperty,
+        isEmbedded,
+        virtualQuery
+    )
     filter[column].forEach((columnFilter: Filter, index: number) => {
         const columnNamePerIteration = `${columnProperties.column}${index}`
         const condition = generatePredicateCondition(
@@ -315,6 +329,7 @@ export function parseFilter(
 }
 
 export function addFilter<T>(
+    config: PaginateConfig<T>,
     qb: SelectQueryBuilder<T>,
     query: PaginateQuery,
     filterableColumns?: { [column: string]: (FilterOperator | FilterSuffix)[] | true }
@@ -328,7 +343,7 @@ export function addFilter<T>(
     qb.andWhere(
         new Brackets((qb: SelectQueryBuilder<T>) => {
             for (const [column] of orFilters) {
-                addWhereCondition(qb, column, filter)
+                addWhereCondition(config, qb, column, filter)
             }
         })
     )
@@ -336,7 +351,7 @@ export function addFilter<T>(
     for (const [column] of andFilters) {
         qb.andWhere(
             new Brackets((qb: SelectQueryBuilder<T>) => {
-                addWhereCondition(qb, column, filter)
+                addWhereCondition(config, qb, column, filter)
             })
         )
     }
